@@ -1,5 +1,5 @@
 {
-    "name": "@llright-com/ember-cli-facebook-js-sdk",
+    "name": "@allright-com/ember-cli-facebook-js-sdk",
     "version": "2.1.1",
     "description": "A simple wrapper for the Facebook JS SDK.",
     "keywords": [
@@ -13,7 +13,13 @@
         "doc": "doc",
         "test": "tests"
     },
-    "repository": "https://github.com/allright-com/ember-cli-facebook-js-sdk",
+    "repository": {
+        "type": "git",
+        "url": "git@github.com:allright-com/ember-cli-facebook-js-sdk.git"
+    },
+    "publishConfig": {
+        "registry": "https://npm.pkg.github.com"
+    },
     "scripts": {
         "build": "ember build",
         "start": "ember server",
