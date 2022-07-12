@@ -1,195 +1,201 @@
-import Evented from '@ember/object/evented';
-import Service from '@ember/service';
-import { getOwner } from '@ember/application';
-import { assign } from '@ember/polyfills'
-import { Promise, resolve, reject } from 'rsvp';
-import { run } from '@ember/runloop';
+import Evented from "@ember/object/evented";
+import Service from "@ember/service";
+import { getOwner } from "@ember/application";
+import { Promise, resolve, reject } from "rsvp";
+import { next } from "@ember/runloop";
 
-export default Service.extend(Evented, {
-  fbInitPromise: null,
-  locale: null,
-  refreshToken: true,
+export default class Fb extends Service.extend(Evented) {
+    fbInitPromise = null;
+    locale = null;
+    refreshToken = true;
 
-  FBInit(options = {}) {
-    if (this.fbInitPromise) { return this.fbInitPromise; }
-
-    const ENV = getOwner(this).resolveRegistration('config:environment');
-
-    var initSettings = assign({}, ENV.FB || {}, options);
-
-    // Detect language configuration and store it.
-    const locale = initSettings.locale || 'en_US';
-    this.locale = locale;
-
-    if (ENV.FB && ENV.FB.skipInit) {
-      this.fbInitPromise = resolve('skip init');
-      return this.fbInitPromise;
-    }
-
-    var original = window.fbAsyncInit;
-    if (!initSettings || !initSettings.appId || !initSettings.version) {
-      return reject('No settings for init');
-    }
-
-    this.fbInitPromise = new Promise(function(resolve){
-      window.fbAsyncInit = function() {
-        window.FB.init(initSettings);
-        run.next(null, resolve);
-      };
-      // URL for the SDK is built according to locale. Defaults to `en_US`.
-      const scriptURL = `https://connect.facebook.net/${locale}/sdk.js`;
-      const head = document.getElementsByTagName('head')[0];
-      const script = document.createElement('script');
-      script.src = scriptURL;
-      head.appendChild(script);
-    }).then(function() {
-      if (original) {
-        window.fbAsyncInit = original;
-        window.fbAsyncInit();
-        window.fbAsyncInit.hasRun = true;
-      }
-    });
-
-    return this.fbInitPromise;
-  },
-
-  setAccessToken(token) {
-    this.accessToken = token;
-    this.trigger('fb.setAccessToken', token);
-    return token;
-  },
-
-  loginWith: function(token) {
-    console.warn('DEPRECATED: please, use setAccessToken instead');
-    this.setAccessToken(token);
-  },
-
-  _api(path) {
-    var method = 'GET';
-    var parameters = {};
-    var arg;
-
-    if (!path) { return reject('Please, provide a path for your request'); }
-
-    switch (arguments.length) {
-      case 2:
-        arg = arguments[1];
-        if (typeof arg === 'string') {
-          method = arg;
-        } else {
-          parameters = arg;
+    FBInit(options = {}) {
+        if (this.fbInitPromise) {
+            return this.fbInitPromise;
         }
-        break;
-      case 3:
-        method = arguments[1];
-        parameters = arguments[2];
+
+        const ENV = getOwner(this).resolveRegistration("config:environment");
+
+        const initSettings = Object.assign({}, ENV.FB || {}, options);
+
+        // Detect language configuration and store it.
+        const locale = initSettings.locale || "en_US";
+        this.locale = locale;
+
+        if (ENV.FB && ENV.FB.skipInit) {
+            this.fbInitPromise = resolve("skip init");
+            return this.fbInitPromise;
+        }
+
+        const original = window.fbAsyncInit;
+        if (!initSettings || !initSettings.appId || !initSettings.version) {
+            return reject("No settings for init");
+        }
+
+        this.fbInitPromise = new Promise(function (resolve) {
+            window.fbAsyncInit = function () {
+                window.FB.init(initSettings);
+                next(null, resolve);
+            };
+            // URL for the SDK is built according to locale. Defaults to `en_US`.
+            const scriptURL = `https://connect.facebook.net/${locale}/sdk.js`;
+            const head = document.getElementsByTagName("head")[0];
+            const script = document.createElement("script");
+            script.src = scriptURL;
+            head.appendChild(script);
+        }).then(function () {
+            if (original) {
+                window.fbAsyncInit = original;
+                window.fbAsyncInit();
+                window.fbAsyncInit.hasRun = true;
+            }
+        });
+
+        return this.fbInitPromise;
     }
 
-    if (!parameters.access_token) {
-      parameters = assign(parameters, {access_token: this.accessToken});
+    setAccessToken(token) {
+        this.accessToken = token;
+        return token;
     }
 
-    return this.FBInit().then(function() {
-      return new Promise(function(resolve, reject) {
-        window.FB.api(path, method, parameters, function(response) {
-          if (response.error) {
-            run.next(null, reject, response.error);
-            return;
-          }
-
-          run.next(null, resolve, response);
-        });
-      });
-    });
-  },
-
-  api() {
-    return this._api(...arguments).catch((error) => {
-      if (this.refreshToken && (error.code === 190 || error.code === 2500)) {
-        console.debug('Trying to refresh Facebook session an re-do the Facebook API request');
-        return this.getLoginStatus().then((response) => {
-          if (response.status === 'connected') {
-            this.setAccessToken(response.authResponse.accessToken);
-            return this._api(...arguments);
-          }
-          return reject(response);
-        });
-      }
-      return reject(error);
-    });
-  },
-
-  ui: function(params) {
-    return this.FBInit().then(function() {
-      return new Promise(function(resolve, reject) {
-        window.FB.ui(params, function(response) {
-          if (response && !response.error_code) {
-            run.next(null, resolve, response);
-            return;
-          }
-
-          run.next(null, reject, response);
-        });
-      });
-    });
-  },
-
-  // Facebook Login Methods
-
-  getLoginStatus: function(forceRequest) {
-    return this.FBInit().then(function() {
-      return new Promise(function(resolve) {
-        window.FB.getLoginStatus(function(response) {
-          run.next(null, resolve, response);
-        }, forceRequest);
-      });
-    });
-  },
-
-  login: function(scope, options={}) {
-
-    var service = this;
-    var params = {scope: scope, return_scopes: true};
-
-    if (options) {
-      params = assign({}, params, options);
+    loginWith = (token) => {
+        console.warn("DEPRECATED: please, use setAccessToken instead");
+        this.setAccessToken(token);
     }
 
-    return this.FBInit().then(function() {
-      return new Promise(function(resolve, reject) {
-        window.FB.login(function(response) {
-          if (response.authResponse) {
-            service.accessToken = response.authResponse.accessToken;
-            run.next(null, resolve, response);
-          } else {
-            run.next(null, reject, response);
-          }
-        }, params);
-      });
-    });
-  },
+    _api(path) {
+        let method = "GET";
+        let parameters = {};
+        let arg;
 
-  logout: function() {
-    return this.FBInit().then(function() {
-      return new Promise(function(resolve) {
-        window.FB.logout(function(response) {
-          run.next(null, resolve, response);
+        if (!path) {
+            return reject("Please, provide a path for your request");
+        }
+
+        switch (arguments.length) {
+            case 2:
+                arg = arguments[1];
+                if (typeof arg === "string") {
+                    method = arg;
+                } else {
+                    parameters = arg;
+                }
+                break;
+            case 3:
+                method = arguments[1];
+                parameters = arguments[2];
+        }
+
+        if (!parameters.access_token) {
+            parameters = Object.assign(parameters, { access_token: this.accessToken });
+        }
+
+        return this.FBInit().then(function () {
+            return new Promise(function (resolve, reject) {
+                window.FB.api(path, method, parameters, function (response) {
+                    if (response.error) {
+                        next(null, reject, response.error);
+                        return;
+                    }
+
+                    next(null, resolve, response);
+                });
+            });
         });
-      });
-    });
-  },
+    }
 
-  getAuthResponse: function() {
-    return window.FB.getAuthResponse();
-  },
-
-  xfbml_parse: function() {
-    return this.FBInit().then(function() {
-      return new Promise(function(resolve) {
-        return window.FB.XFBML.parse(undefined, function() {
-          run.next(null, resolve, 'XFBML.parse');
+    api() {
+        return this._api(...arguments).catch((error) => {
+            if (
+                this.refreshToken &&
+                (error.code === 190 || error.code === 2500)
+            ) {
+                console.debug(
+                    "Trying to refresh Facebook session an re-do the Facebook API request"
+                );
+                return this.getLoginStatus().then((response) => {
+                    if (response.status === "connected") {
+                        this.setAccessToken(response.authResponse.accessToken);
+                        return this._api(...arguments);
+                    }
+                    return reject(response);
+                });
+            }
+            return reject(error);
         });
-      });
-    });
-  }
-});
+    }
+
+    ui = (params) => {
+        return this.FBInit().then(function () {
+            return new Promise(function (resolve, reject) {
+                window.FB.ui(params, function (response) {
+                    if (response && !response.error_code) {
+                        next(null, resolve, response);
+                        return;
+                    }
+
+                    next(null, reject, response);
+                });
+            });
+        });
+    }
+
+    // Facebook Login Methods
+
+    getLoginStatus = (forceRequest) => {
+        return this.FBInit().then(function () {
+            return new Promise(function (resolve) {
+                window.FB.getLoginStatus(function (response) {
+                    next(null, resolve, response);
+                }, forceRequest);
+            });
+        });
+    }
+
+    login = (scope, options = {}) => {
+        const service = this;
+        let params = { scope: scope, return_scopes: true };
+
+        if (options) {
+            params = Object.assign({}, params, options);
+        }
+
+        return this.FBInit().then(function () {
+            return new Promise(function (resolve, reject) {
+                window.FB.login(function (response) {
+                    if (response.authResponse) {
+                        service.accessToken = response.authResponse.accessToken;
+                        next(null, resolve, response);
+                    } else {
+                        next(null, reject, response);
+                    }
+                }, params);
+            });
+        });
+    }
+
+    logout = () => {
+        return this.FBInit().then(function () {
+            return new Promise(function (resolve) {
+                window.FB.logout(function (response) {
+                    next(null, resolve, response);
+                });
+            });
+        });
+    }
+
+    getAuthResponse = () => {
+        return window.FB.getAuthResponse();
+    }
+
+    xfbml_pars = () => {
+        return this.FBInit().then(function () {
+            return new Promise(function (resolve) {
+                return window.FB.XFBML.parse(undefined, function () {
+                    next(null, resolve, "XFBML.parse");
+                });
+            });
+        });
+    }
+}
